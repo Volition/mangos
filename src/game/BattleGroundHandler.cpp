@@ -105,6 +105,14 @@ void WorldSession::HandleBattlemasterJoinOpcode( WorldPacket & recv_data )
     if (_player->InBattleGround())
         return;
 
+	// Prevent Joining from Instances
+	uint32 mapid = _player->GetMapId();
+	if(mapid != 0 && mapid != 1 && mapid != 530 && mapid != 571)
+	{
+		SendNotification("You cannot enter a Battleground from here");
+		return;
+	}
+
     // get bg instance or bg template if instance not found
     BattleGround *bg = NULL;
     if (instanceId)
