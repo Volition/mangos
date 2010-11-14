@@ -3400,6 +3400,27 @@ void Map::SendObjectUpdates()
     }
 }
 
+bool Map::IsNextZcoordOK(float x, float y, float oldZ, float maxDiff) const
+{
+	// This can be called faster, but the code needed is significantly longer.
+	maxDiff = maxDiff >= 100.0f ? 10.0f : sqrtf(maxDiff);
+	bool useVmaps = false;
+	if( GetHeight(x, y, oldZ, false) <  GetHeight(x, y, oldZ, true) ) // check use of vmaps
+		useVmaps = true;
+
+	float newZ = GetHeight(x, y, oldZ+maxDiff-2.0f, useVmaps);
+
+	if (fabs(newZ-oldZ) > maxDiff)                              // This is bad
+	{
+		useVmaps = !useVmaps;                                     // try to change Vmap use
+		newZ = GetHeight(x, y, oldZ+maxDiff-2.0f, useVmaps);
+
+		if (fabs(newZ-oldZ) > maxDiff)
+			return false;
+	}
+	return true;
+}
+
 uint32 Map::GenerateLocalLowGuid(HighGuid guidhigh)
 {
     // TODO: for map local guid counters possible force reload map instead shutdown server at guid counter overflow

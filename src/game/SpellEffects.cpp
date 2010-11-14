@@ -7323,24 +7323,71 @@ void Spell::EffectLeapForward(SpellEffectIndex eff_idx)
 
     if( m_spellInfo->rangeIndex == 1)                       //self range
     {
+		uint32 mapid = m_caster->GetMapId();
         float dis = GetSpellRadius(sSpellRadiusStore.LookupEntry(m_spellInfo->EffectRadiusIndex[eff_idx]));
+		// Glyph of Blink related
+		if(m_caster->GetTypeId() == TYPEID_PLAYER)
+			((Player*)m_caster)->ApplySpellMod(m_spellInfo->Id, SPELLMOD_RADIUS, dis, this);
 
-        // before caster
-        float fx, fy, fz;
-        unitTarget->GetClosePoint(fx, fy, fz, unitTarget->GetObjectBoundingRadius(), dis);
-        float ox, oy, oz;
-        unitTarget->GetPosition(ox, oy, oz);
+		/* Start */
+		float cx,cy,cz;
+		float dx,dy,dz;
+		float angle = unitTarget->GetOrientation();
+		unitTarget->GetPosition(cx,cy,cz);
 
-        float fx2, fy2, fz2;                                // getObjectHitPos overwrite last args in any result case
-        if(VMAP::VMapFactory::createOrGetVMapManager()->getObjectHitPos(unitTarget->GetMapId(), ox,oy,oz+0.5f, fx,fy,oz+0.5f,fx2,fy2,fz2, -0.5f))
+		// Check use of vmaps
+		bool useVmap = false;
+		bool swapZone = true;
+
+		if( unitTarget->GetMap()->GetHeight(cx, cy, cz, false) <  unitTarget->GetMap()->GetHeight(cx, cy, cz, true) )
+			useVmap = true;
+
+		const int itr = int(dis/0.5f);
+		const float _dx = 0.5f * cos(angle);
+		const float _dy = 0.5f * sin(angle);
+		dx = cx;
+		dy = cy;
+
+		for(float i=0.5f; i<dis; i+=0.5f)
         {
-            fx = fx2;
-            fy = fy2;
-            fz = fz2;
-            unitTarget->UpdateAllowedPositionZ(fx, fy, fz);
+			dx += _dx;
+			dy += _dy;
+			MaNGOS::NormalizeMapCoord(dx);
+			MaNGOS::NormalizeMapCoord(dy);
+			dz = cz;
+
+			// Prevent Climbing
+			if( unitTarget->GetMap()->IsNextZcoordOK(dx, dy, dz, 3.0f) && (unitTarget->IsWithinLOS(dx, dy, dz)))
+			{
+				cx = dx;
+				cy = dy;
+				unitTarget->UpdateGroundPositionZ(cx, cy, cz, 3.0f);
+			}
+			else
+			{
+				if(swapZone)
+				{
+					// Change and go back
+					swapZone = false;
+					useVmap = !useVmap;
+					--i;
+					dx -= _dx;
+					dy -= _dy;
+				}
+				else
+				{
+					dz += 0.5f;
+					break;
+				}
+			}
         }
 
-        unitTarget->NearTeleportTo(fx, fy, fz, unitTarget->GetOrientation(), unitTarget == m_caster);
+        unitTarget->UpdateGroundPositionZ(cx, cy, cz);
+
+		if(unitTarget->GetTypeId() == TYPEID_PLAYER)
+			((Player*)unitTarget)->TeleportTo(mapid, cx, cy, cz, unitTarget->GetOrientation(), TELE_TO_NOT_LEAVE_COMBAT | TELE_TO_NOT_UNSUMMON_PET | (unitTarget==m_caster ? TELE_TO_SPELL : 0));
+		else
+			unitTarget->GetMap()->CreatureRelocation((Creature*)unitTarget, cx, cy, cz, unitTarget->GetOrientation());
     }
 }
 
@@ -7453,6 +7500,9 @@ void Spell::EffectCharge(SpellEffectIndex /*eff_idx*/)
     float x, y, z;
     unitTarget->GetContactPoint(m_caster, x, y, z, 3.666666f);
 
+	// Attempt to Normalize Z coord
+	unitTarget->UpdateGroundPositionZ(x, y, z, 5.0f);
+
     if (unitTarget->GetTypeId() != TYPEID_PLAYER)
         ((Creature *)unitTarget)->StopMoving();
 
@@ -7480,6 +7530,9 @@ void Spell::EffectCharge2(SpellEffectIndex /*eff_idx*/)
         unitTarget->GetContactPoint(m_caster, x, y, z, 3.666666f);
     else
         return;
+
+	// Attempt to Normalize Z coord
+	unitTarget->UpdateGroundPositionZ(x, y, z, 5.0f);
 
     // Only send MOVEMENTFLAG_WALK_MODE, client has strange issues with other move flags
     m_caster->MonsterMove(x, y, z, 1);
